@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>
+Literariness prediction
+</title>
+</head>
+<body>
+<div style="margin-left: auto; margin-right: auto; width: 80%; ">
+<h1>
+Literariness prediction
+</h1>
+
+<p>Paste some (Dutch) text; only the first 1000 sentences will be used.</p>
+
+<form name=theform action=results method=post enctype="multipart/form-data">
+<table style="width: 100%; ">
+        <tr>
+                <td colspan=2>
+                        Enter a text.
+                </td>
+        </tr>
+        <tr>
+                <td style="width: 50%; " >
+                        <textarea name=text rows=12 cols=60 id=text></textarea>
+                </td>
+                <td>
+                        <p>
+						Genre:
+						<select name=Category>
+							<option value=Fiction>General Fiction</option>
+							<option value=Romantic>Romantic</option>
+							<option value=Suspense>Suspense</option>
+							<option value=Other>Other</option>
+						</select><br>
+						Author gender:
+						<select name=Gender>
+							<option value=male>Male</option>
+							<option value=female>Female</option>
+							<option value="unknown/multiple">Unknown/multiple</option>
+						</select><br>
+						Translated:
+						<select name=Translated>
+							<option value=no>no</option>
+							<option value=yes>yes</option>
+						</select><br><br>
+                        <input type=submit>
+						</p>
+                </td>
+        </tr>
+</table>
+</form>
+
+</div></body></html>
+

@@ -1,12 +1,19 @@
 Code for the paper "A data-oriented model of literary language"
 ===============================================================
 
-Takes a corpus of parsed texts and extracts features for a regression or
+This is the code as used in the EACL 2017 paper to predict whether a text would
+be rated as literary or not; however, the code is general enough to predict any
+continuous or discrete variable from various predefined textual features, including
+syntactic tree fragments.
+
+Expects a corpus of parsed texts and extracts features for a regression or
 classification task on them, as well as running a cross-validated evaluation
-of models trained on those featurese.
+of models trained on those features.
 
 Requirements
 ------------
+
+Python 3.3+
 
     $ pip3 install --user pandas scikit-learn nltk readability disco-dop
 
@@ -15,16 +22,20 @@ Feature extraction
 
     $ python3 features.py <dataset> <options>
 
-Run without arguments for a description of available options.
+Run without arguments for a description of available options and expected input.
 
 Predictive model
 ----------------
 
     $ python3 predict.py <dataset>
 
+Run without arguments for a description of expected input.
+
 Dataset used in paper
 ---------------------
-For obvious copyright reasons, the dataset of recent novels unfortunately cannot be made available.
+For obvious copyright reasons, the dataset of recent novels unfortunately
+cannot be made available. The following is the output of the experiments as
+reported in the paper:
 
     $ python3 features.py Riddle "Literary rating" --disc --lang=nl --freqlist=sonar-word.freqsort.lower.gz --slice=1000:2000
     [...]
@@ -86,9 +97,9 @@ For obvious copyright reasons, the dataset of recent novels unfortunately cannot
 Example Gutenberg dataset
 -------------------------
 A set of 100 novels from project Gutenberg. The prediction target is the download count.
-This is a subset of the dataset used in Ashok et al (2013, EMNLP), with similar features.
+This is a subset of the dataset used in Ashok et al. (2013, EMNLP), with similar features.
 This only serves as a toy corpus for demonstration. The low scores are probably
-due to the small dataset and the prediction target too noisy (evaluating as
+due to the small dataset and the prediction target being too noisy (evaluating as
 binary classification would be more appropriate).
 
     $ curl -sSL https://staff.fnwi.uva.nl/a.w.vancranenburgh/100gutenbergnovels.tar.bz2 | tar -xjf -

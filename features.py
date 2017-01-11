@@ -88,6 +88,7 @@ import glob
 import gzip
 import bz2
 import lzma
+from itertools import islice
 from collections import Counter, OrderedDict, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from getopt import gnu_getopt, GetoptError
@@ -183,8 +184,13 @@ class Text(object):
 
 	:param maxlen: filter out incorrectly segmented sentences.
 	"""
-	def __init__(self, filename, start=None, end=None, disc=False, maxlen=300,
-			lang='en'):
+	@classmethod
+	def fromparsetrees(cls, filename, start=None, end=None, disc=False,
+			maxlen=300, lang='en'):
+		self = cls()
+		self.filename = filename
+		self.lang = lang
+		self.disc = disc
 		if filename.endswith('.mrg'):
 			corpus = treebank.BracketCorpusReader(filename)
 		elif filename.endswith('.dbr'):
@@ -194,7 +200,6 @@ class Text(object):
 		else:
 			raise ValueError('pass filename with .mrg, .dbr, '
 					'or .export extension.')
-		self.disc = disc
 		selection = [item for _, item
 				in corpus.itertrees(start, end)
 				if len(item.sent) <= maxlen]
@@ -231,33 +236,48 @@ class Text(object):
 			if tree:
 				self.unbinarized.append(tree)
 				self.sentsnopunct.append(sent)
-		self.filename = filename
 
-	def readabilityscores(self, lang='en'):
+	@classmethod
+	def fromtokenized(cls, filename, tokens, start=None, end=None, maxlen=300,
+			lang='en'):
+		"""Alternate constructor when only a tokenized text is available.
+
+		:param tokens: a multi-line string of space-separated tokens."""
+		self = cls()
+		self.filename = filename
+		self.lang = lang
+		self.disc = False  # not applicable
+		self.start, self.end = start, end
+		tok = (line.split() for line in islice(tokens.splitlines(), start, end))
+		selection = [sent for sent in tok if len(sent) <= maxlen]
+		if not selection:
+			raise ValueError('no sentences in interval %d:%d <= %d words' % (
+					start, end, maxlen))
+		self.sents = self.origsents = [item for item in selection]
+		self.detokenized = [detokenize(' '.join(sent)) for sent in self.sents]
+		self.trees = self.unbinarized = self.sentsnopunct = []
+		return self
+
+	def readabilityscores(self):
 		"""Return simple readability measures for text."""
 		result = readability.getmeasures(
 				(' '.join(sent) for sent in self.sents),
-				lang=lang)
+				lang=self.lang)
 		return {'r_' + a: b
 				for data in result.values()
 					for a, b in data.items()}
 
-	def basicfeatures(self, freqlist=None, lang=None):
+	def basicfeatures(self, freqlist=None):
 		"""Compute several basic textual features.
 
-		:param freqlist: if given, a filename with word frequencies in tab
-			separated format.
-		"""
+		:param freqlist: if given, a DataFrame with word frequencies."""
 		result = {}
 		result['b_%_direct_speech'] = 100 * sum(1 for sent in self.sents
 					if DIRECTSPEECHRE.search(' '.join(sent)) is not None
 					) / len(self.sents)
-		if freqlist:
-			wordlist = pandas.read_table(
-					freqlist, encoding='utf8', index_col=0, header=None,
-					names=['word', 'count'])
+		if freqlist is not None:
 			thresholds = [1000, 2000, 3000, 5000, 10000, 20000]
-			w = OrderedDict([('b_top{}vocab'.format(n), wordlist.ix[:n].index)
+			w = OrderedDict([('b_top{}vocab'.format(n), freqlist.ix[:n].index)
 				for n in thresholds])
 			# original: lines 1000 - 2000, including empty lines
 			text = pandas.Series(Counter((
@@ -267,7 +287,7 @@ class Text(object):
 				for a, b in w.items():
 					result[a] = text.ix[text.index & b].sum() / text.sum()
 				result['b_unknownvocab'] = (text.ix[text.index.difference(
-						wordlist.index)].sum() / text.sum())
+						freqlist.index)].sum() / text.sum())
 		# original (where filename is .tok file):
 		# with open(self.filename, 'rb') as inp:
 		# 	data = inp.read(100000)
@@ -282,7 +302,7 @@ class Text(object):
 		# heads can be identified; D-level additionally requires
 		# functions/morph. feats and is only implemented for Dutch.
 		for tree in self.unbinarized:
-			if tree and lang == 'nl':
+			if tree and self.lang == 'nl':
 				totdlevel += treebanktransforms.dlevel(tree)
 				numsents += 1
 			if tree:
@@ -291,7 +311,7 @@ class Text(object):
 				numdeps += b
 		if numdeps:
 			result['b_avgdeplen'] = totlen / numdeps
-		if lang == 'nl' and numsents:
+		if self.lang == 'nl' and numsents:
 			result['b_avgdlevel'] = totdlevel / numsents
 		return result
 
@@ -307,16 +327,16 @@ class Text(object):
 				for sent in self.sents
 					for ngram in ngrams(sent, n))
 
-	def stylengrams(self, n, lang='en'):
+	def stylengrams(self, n):
 		"""Return frequencies of style n-grams in text.
 
 		A style n-gram is a word n-gram in which content words are replaced
 		with their POS tags."""
-		if lang == 'en':
+		if self.lang == 'en':
 			funcwordpos = re.compile(
 					r'^(?:NN(?:[PS]|PS)?|(?:JJ|RB)[RS]?|VB[DGNPZ])$')
 			stopwords = STOPWORDS['en']
-		elif lang == 'nl':
+		elif self.lang == 'nl':
 			# POS = 'let|spec|vg|lid|vnw|tw|tsw|vz|bw|ww|adj|n'
 			# function words missing after applying these POS:
 			# some adverbs, aux verbs.
@@ -403,7 +423,8 @@ def getfeatures(
 	for n, (filename, origfilename) in enumerate(list(filenames.items()), 1):
 		print('%d. %s' % (n, filename))
 		try:
-			text = Text(origfilename, start, end, disc, lang=lang)
+			text = Text.fromparsetrees(
+					origfilename, start, end, disc, lang=lang)
 		except ValueError as err:
 			print('ERROR with %s:\n%s' % (origfilename, err))
 			del filenames[filename]
@@ -1048,7 +1069,7 @@ def main():
 	opts = dict(opts)
 	os.chdir(datasetdir)
 
-	# Sort by literariness to get stratified folds.
+	# Sort by target variable to get stratified folds.
 	metadata = pandas.read_csv('metadata.csv').sort_values(by=targetcolumn)
 	if 'fold' not in metadata.columns:
 		numfolds = 5
@@ -1078,13 +1099,19 @@ def main():
 				disc='--disc' in opts)
 	else:
 		extfrags = {}
+	if '--freqlist' in opts:
+		freqlist = pandas.read_table(
+				opts['--freqlist'], encoding='utf8', index_col=0, header=None,
+				names=['word', 'count'])
+	else:
+		freqlist = None
 
 	data = getfeatures(
 			filepattern,
 			disc='--disc' in opts,
 			lang=opts.get('--lang', 'en'),
 			start=start, end=end,
-			freqlist=opts.get('--freqlist'),
+			freqlist=freqlist,
 			**extfrags)
 	with gzip.open('features/simple.csv.gz', 'wt') as out:
 		data.to_csv(out, encoding='utf8')

@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>
+Literariness prediction
+</title>
+<script>
+function toggle(id) {
+    /* toggle element with id to be hidden or not. */
+    var el = document.getElementById(id);
+    if(el.style.display == 'none')
+        el.style.display = 'block';
+    else
+        el.style.display = 'none';
+}
+</script>
+</head>
+<body>
+<div style="margin-left: auto;  margin-right: auto;  width: 80%; ">
+<h1>
+Literariness prediction
+</h1>
+
+<div>
+Tokenized text (<a href="javascript: toggle('tokens'); ">toggle</a>):
+<pre id=tokens style="display: none; ">
+{{ tokens }}
+</pre>
+</div>
+
+<div>
+Features:
+<pre>
+{% for key in feat %}
+   {{ key }}: {{ feat[key] }}
+{%- endfor %}
+</pre>
+</div>
+
+<div>
+Predictions (1-7, 1=definitely not litearry, 7=highly literary):
+<pre>
+{% for key in pred %}
+   {{ key }}: {{ pred[key] }}
+{%- endfor %}
+</pre>
+</div>
+
+</div></body></html>
+
