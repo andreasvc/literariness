@@ -277,7 +277,7 @@ class Text(object):
 					) / len(self.sents)
 		if freqlist is not None:
 			thresholds = [1000, 2000, 3000, 5000, 10000, 20000]
-			w = OrderedDict([('b_top{}vocab'.format(n), freqlist.ix[:n].index)
+			w = OrderedDict([('b_top{}vocab'.format(n), freqlist.iloc[:n].index)
 				for n in thresholds])
 			# original: lines 1000 - 2000, including empty lines
 			text = pandas.Series(Counter((
@@ -285,8 +285,8 @@ class Text(object):
 					for token in sent)))
 			if len(text) > 0:
 				for a, b in w.items():
-					result[a] = text.ix[text.index & b].sum() / text.sum()
-				result['b_unknownvocab'] = (text.ix[text.index.difference(
+					result[a] = text.loc[text.index & b].sum() / text.sum()
+				result['b_unknownvocab'] = (text.loc[text.index.difference(
 						freqlist.index)].sum() / text.sum())
 		# original (where filename is .tok file):
 		# with open(self.filename, 'rb') as inp:
@@ -625,7 +625,7 @@ def filterfragments(target, filenames, corpus, start, end,
 				fold,
 				foldfrags,
 				features,
-				target.ix[filesnotinfold].target,
+				target.loc[filesnotinfold].target,
 				relevancythreshold, redundancythreshold)
 		del features
 		print()

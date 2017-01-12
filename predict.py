@@ -100,7 +100,7 @@ def inducedfeatures():
 	simple = pandas.read_csv(
 			'features/simple.csv.gz', index_col=0, header=[0, 1])
 	target = pandas.read_csv('features/target.csv', index_col=0)
-	target = target.ix[target.index & simple.index]
+	target = target.loc[target.index & simple.index]
 
 	result = pandas.DataFrame(index=target.index)
 	result['fold'] = target.fold
@@ -116,7 +116,7 @@ def inducedfeatures():
 		if featclass == 'features/simple.csv.gz':
 			continue
 		print('\n%s' % featclass)
-		data = pandas.read_csv(featclass, index_col=0).T.ix[target.index]
+		data = pandas.read_csv(featclass, index_col=0).T.loc[target.index]
 		data.fillna(0, inplace=True)
 		if len(data.columns) > 1000:
 			mindocs, maxdocs = int(0.1 * len(data)), int(0.9 * len(data))
@@ -241,9 +241,9 @@ def ensemble():
 		base = pandas.DataFrame(index=selected)
 	data = pandas.concat([metadata, simple, cliches, topics,
 			base[base.columns.difference(metadata.columns)]],
-			axis=1).ix[selected]
+			axis=1).loc[selected]
 	target = pandas.read_csv('features/target.csv', index_col=0)
-	target = target.ix[selected]
+	target = target.loc[selected]
 	discrete = isdiscrete(target.target)
 	le = preprocessing.LabelEncoder()
 	if discrete:
@@ -291,8 +291,8 @@ def ensemble():
 					raise ValueError('unknown feature %r' % x)
 			infold = target.fold == fold
 			outsidefold = target.fold != fold
-			X_train = [row for _, row in selected.ix[outsidefold].iterrows()]
-			X_test = [row for _, row in selected.ix[infold].iterrows()]
+			X_train = [row for _, row in selected.loc[outsidefold].iterrows()]
+			X_test = [row for _, row in selected.loc[infold].iterrows()]
 			y_train = target[outsidefold].target
 			if discrete:
 				y_train = le.transform(y_train)
