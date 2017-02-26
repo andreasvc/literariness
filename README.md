@@ -172,6 +172,12 @@ Inspecting induced fragments:
     with ... ... ...     ...      of     ...
 
 
+Acknowledgment
+--------------
+This work is part of [The Riddle of Literary Quality](http://literaryquality.huygens.knaw.nl),
+a project supported by the [Royal Netherlands Academy of Arts and Sciences](http://www.knaw.nl)
+through the Computational Humanities Program.
+
 Reference
 ---------
 
