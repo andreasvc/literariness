@@ -1,10 +1,10 @@
 Code for the paper "A data-oriented model of literary language"
 ===============================================================
 
-This is the code as used in the EACL 2017 paper to predict whether a text would
-be rated as literary or not; however, the code is general enough to predict any
-continuous or discrete variable from various predefined textual features, including
-syntactic tree fragments.
+This is the code as used in the [EACL 2017 paper](https://arxiv.org/abs/1701.03329)
+to predict whether a text would be rated as literary or not; however, the code
+is general enough to predict any continuous or discrete variable from various
+predefined textual features, including syntactic tree fragments.
 
 Expects a corpus of parsed texts and extracts features for a regression or
 classification task on them, as well as running a cross-validated evaluation
@@ -97,7 +97,8 @@ reported in the paper:
 Example Gutenberg dataset
 -------------------------
 A set of 100 novels from project Gutenberg. The prediction target is the download count.
-This is a subset of the dataset used in Ashok et al. (2013, EMNLP), with similar features.
+This is a subset of the dataset used in [Ashok et al. (2013, EMNLP)](http://aclweb.org/anthology/D13-1181),
+with similar features.
 This only serves as a toy corpus for demonstration. The low scores are probably
 due to the small dataset and the prediction target being too noisy (evaluating as
 binary classification would be more appropriate).
@@ -180,6 +181,6 @@ Reference
         booktitle={Proceedings of EACL},
         year={2017},
         pages={...},
-        url={...},
+        url={https://arxiv.org/abs/1701.03329},
     }
 
