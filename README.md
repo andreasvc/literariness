@@ -1,7 +1,7 @@
 Code for the paper "A data-oriented model of literary language"
 ===============================================================
 
-This is the code as used in the [EACL 2017 paper](https://arxiv.org/abs/1701.03329)
+This is the code as used in the [EACL 2017 paper](http://aclweb.org/anthology/E17-1115)
 to predict whether a text would be rated as literary or not; however, the code
 is general enough to predict any continuous or discrete variable from various
 predefined textual features, including syntactic tree fragments.
@@ -186,7 +186,7 @@ Reference
         author={van Cranenburgh, Andreas and Rens Bod},
         booktitle={Proceedings of EACL},
         year={2017},
-        pages={...},
-        url={https://arxiv.org/abs/1701.03329},
+        pages={1228--1238},
+        url={http://aclweb.org/anthology/E17-1115},
     }
 
