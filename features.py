@@ -103,7 +103,7 @@ from nltk import ngrams
 from discodop.tree import Tree, ParentedTree, ptbunescape
 from discodop.heads import applyheadrules, readheadrules
 from discodop.grammar import lcfrsproductions, printrule
-from discodop.plcfrs import merge
+from discodop.util import merge
 from discodop.containers import Vocabulary, FixedVocabulary, Ctrees
 from discodop.treetransforms import binarize, unbinarize, handledisc
 from discodop import treebank, treebanktransforms, treesearch, _fragments, \
