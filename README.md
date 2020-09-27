@@ -15,7 +15,7 @@ Requirements
 
 Python 3.3+
 
-    $ pip3 install --user pandas scikit-learn nltk readability disco-dop
+    $ pip3 install --user -r requirements.txt
 
 Feature extraction
 ------------------

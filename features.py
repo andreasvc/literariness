@@ -19,6 +19,7 @@ Input
     line; alternatively, Author_Title.dbr is a file with discontinuous
     bracketed trees,
     cf. http://discodop.readthedocs.io/en/latest/fileformats.html#discbracket
+	Trees need to be binarized.
 - a file 'dataset/metadata.csv' describing the texts; specificallly,
     a column named "Label" should match the filenames of the texts
 	(minus the treebank format extension), and the column <target> is a column
@@ -64,6 +65,7 @@ Options
                     optionally, a filename with predefined tree fragments
                     to count in the texts and use as features.
 --nofragments       disables fragment mining
+--discrete          target is a classification task (default: regression)
 
 Fragment mining thresholds:
 
@@ -97,20 +99,40 @@ import numpy as np
 import pandas
 from scipy.stats import entropy
 import scipy.sparse
-from sklearn import cross_validation, feature_selection
+from sklearn import model_selection, feature_selection
 from sklearn.utils import check_random_state
 from nltk import ngrams
 from discodop.tree import Tree, ParentedTree, ptbunescape
 from discodop.heads import applyheadrules, readheadrules
 from discodop.grammar import lcfrsproductions, printrule
-from discodop.util import merge
+from discodop.util import merge, openread
 from discodop.containers import Vocabulary, FixedVocabulary, Ctrees
 from discodop.treetransforms import binarize, unbinarize, handledisc
-from discodop import treebank, treebanktransforms, treesearch, _fragments, \
-		punctuation
+from discodop import (treebank, treebanktransforms, treesearch, _fragments,
+		punctuation)
 import readability
 
 DIRECTSPEECHRE = re.compile(r"^- .*$|(?:^|.* )['\"](?: .*|$)")
+PUNCTTOKENRE = re.compile(r'^[^\w\s]+$')
+FUNCWORDPOS = {
+		'en': r'^(?:CC|DT|EX|IN|MD|PDT|PRP[\$]?|RP|TO|WDT|WP[\$]?|WRB)$',
+
+		# function words missing after applying these POS:
+		# some adverbs, aux verbs.
+		'nl': ('^(?:'
+				'let'   # punctuation
+				'|vg'   # conjuction
+				'|lid'  # determiner
+				'|vnw'  # pronouns
+				'|tsw'  # numeral
+				'|vz'   # preposition
+				')(?:$|/)'),
+
+		'de': ('^(?:APPR|APPRART|APPO|APZR|ART|ITJ|KON|KOKOM'
+				'|KOUI|KOUS|PDAT|PDS|PIAT|PIS|PPER|PRF|PPOSS|PPOSAT|PRELAT'
+				'|PRELS|PTKA|PTKANT|PTKNEG|PTKREL|PTKVZ|PTKZU|PWS|PWAT'
+				'|PWAV|PWAVREL|PWREL|VAFIN)$'),
+		}
 STOPWORDS = {
 		'nl': set((
 		' aan af al alles als altijd andere ben bij daar dan dat'
@@ -176,7 +198,68 @@ STOPWORDS = {
 		why will willing wish with within without won't wonder would would
 		wouldn't x y yes yet you you'd you'll you're you've your yours yourself
 		yourselves z zero""".split()),
-		}
+		'de': """ab aber alle allein allem allen aller allerdings allerlei
+		alles allmählich allzu als alsbald also am an and ander andere anderem
+		anderen anderer andererseits anderes anderm andern andernfalls anders
+		anstatt auch auf aus ausgenommen ausser ausserdem außer außerdem
+		außerhalb bald bei beide beiden beiderlei beides beim beinahe bereits
+		besonders besser beträchtlich bevor bezüglich bin bis bisher bislang
+		bist bloß bsp. bzw ca ca. content da dabei dadurch dafür dagegen daher
+		dahin damals damit danach daneben dann daran darauf daraus darin darum
+		darunter darüber darüberhinaus das dass dasselbe davon davor dazu daß
+		dein deine deinem deinen deiner deines dem demnach demselben den denen
+		denn dennoch denselben der derart derartig derem deren derer derjenige
+		derjenigen derselbe derselben derzeit des deshalb desselben dessen
+		desto deswegen dich die diejenige dies diese dieselbe dieselben diesem
+		diesen dieser dieses diesseits dir direkt direkte direkten direkter
+		doch dort dorther dorthin drauf drin drunter drüber du dunklen durch
+		durchaus eben ebenfalls ebenso eher eigenen eigenes eigentlich ein eine
+		einem einen einer einerseits eines einfach einführen einführte
+		einführten eingesetzt einig einige einigem einigen einiger einigermaßen
+		einiges einmal eins einseitig einseitige einseitigen einseitiger einst
+		einstmals einzig entsprechend entweder er erst es etc etliche etwa
+		etwas euch euer eure eurem euren eurer eures falls fast ferner folgende
+		folgenden folgender folgendes folglich fuer für gab ganze ganzem ganzen
+		ganzer ganzes gar gegen gemäss ggf gleich gleichwohl gleichzeitig
+		glücklicherweise gänzlich hab habe haben haette hast hat hatte hatten
+		hattest hattet heraus herein hier hier hinter hiermit hiesige hin
+		hinein hinten hinter hinterher http hätt hätte hätten höchstens ich
+		igitt ihm ihn ihnen ihr ihre ihrem ihren ihrer ihres im immer immerhin
+		in indem indessen infolge innen innerhalb ins insofern inzwischen
+		irgend irgendeine irgendwas irgendwen irgendwer irgendwie irgendwo ist
+		ja je jed jede jedem jeden jedenfalls jeder jederlei jedes jedoch
+		jemand jene jenem jenen jener jenes jenseits jetzt jährig jährige
+		jährigen jähriges kam kann kannst kaum kein keine keinem keinen keiner
+		keinerlei keines keineswegs klar klare klaren klares klein kleinen
+		kleiner kleines koennen koennt koennte koennten komme kommen kommt
+		konkret konkrete konkreten konkreter konkretes können könnt künftig
+		leider machen man manche manchem manchen mancher mancherorts manches
+		manchmal mehr mehrere mein meine meinem meinen meiner meines mich mir
+		mit mithin muessen muesst muesste muss musst musste mussten muß mußt
+		müssen müsste müssten müßt müßte nach nachdem nachher nachhinein nahm
+		natürlich neben nebenan nehmen nein nicht nichts nie niemals niemand
+		nirgends nirgendwo noch nun nur nächste nämlich nötigenfalls ob oben
+		oberhalb obgleich obschon obwohl oder oft per plötzlich schließlich
+		schon sehr sehrwohl seid sein seine seinem seinen seiner seines seit
+		seitdem seither selber selbst sich sicher sicherlich sie sind so sobald
+		sodass sodaß soeben sofern sofort sogar solange solch solche solchem
+		solchen solcher solches soll sollen sollst sollt sollte sollten
+		solltest somit sondern sonst sonstwo sooft soviel soweit sowie sowohl
+		tatsächlich tatsächlichen tatsächlicher tatsächliches trotzdem ueber um
+		umso unbedingt und unmöglich unmögliche unmöglichen unmöglicher uns
+		unser unser unsere unsere unserem unseren unserer unseres unter usw
+		viel viele vielen vieler vieles vielleicht vielmals vom von vor voran
+		vorher vorüber völlig wann war waren warst warum was weder weil weiter
+		weitere weiterem weiteren weiterer weiteres weiterhin weiß welche
+		welchem welchen welcher welches wem wen wenig wenige weniger wenigstens
+		wenn wenngleich wer werde werden werdet weshalb wessen wichtig wie
+		wieder wieso wieviel wiewohl will willst wir wird wirklich wirst wo
+		wodurch wogegen woher wohin wohingegen wohl wohlweislich womit
+		woraufhin woraus worin wurde wurden während währenddessen wär wäre
+		wären würde würden z.B. zB zahlreich zeitweise zu zudem zuerst zufolge
+		zugleich zuletzt zum zumal zur zurück zusammen zuviel zwar zwischen
+		ähnlich übel über überall überallhin überdies übermorgen übrig übrigens
+		""".split(), }
 
 
 class Text(object):
@@ -228,14 +311,15 @@ class Text(object):
 		for tree, sent in zip(self.trees, self.sents):
 			tree = unbinarize(tree.copy(True))
 			if lang == 'nl':
-				tree = treebanktransforms.reversetransform(tree,
-						treebanktransforms.PRESETS['lassy-func'])
+				tree = treebanktransforms.reversetransform(
+						tree, sent, treebanktransforms.PRESETS['lassy-func'])
 			sent = sent.copy()
 			punctuation.punctremove(tree, sent)
 			applyheadrules(tree, headrules)
 			if tree:
 				self.unbinarized.append(tree)
 				self.sentsnopunct.append(sent)
+		return self
 
 	@classmethod
 	def fromtokenized(cls, filename, tokens, start=None, end=None, maxlen=300,
@@ -316,10 +400,10 @@ class Text(object):
 		return result
 
 	def punctfrequencies(self):
-		"""Return frequencies of non-alphanumeric characters for the text."""
+		"""Return frequencies of non-alphanumeric tokens for the text."""
 		return Counter('._' + word
 				for sent in self.sents
-					for word in sent if not word[0].isalpha())
+					for word in sent if PUNCTTOKENRE.match(word))
 
 	def wordngrams(self, n):
 		"""Return frequencies of word n-grams in text."""
@@ -332,27 +416,8 @@ class Text(object):
 
 		A style n-gram is a word n-gram in which content words are replaced
 		with their POS tags."""
-		if self.lang == 'en':
-			funcwordpos = re.compile(
-					r'^(?:NN(?:[PS]|PS)?|(?:JJ|RB)[RS]?|VB[DGNPZ])$')
-			stopwords = STOPWORDS['en']
-		elif self.lang == 'nl':
-			# POS = 'let|spec|vg|lid|vnw|tw|tsw|vz|bw|ww|adj|n'
-			# function words missing after applying these POS:
-			# some adverbs, aux verbs.
-			funcwordpos = re.compile(
-					'^(?:'
-					'let'   # punctuation
-					'|vg'   # conjuction
-					'|lid'  # determiner
-					'|vnw'  # pronouns
-					'|tsw'  # numeral
-					'|vz'   # preposition
-					')(?:$|/)')
-			stopwords = STOPWORDS['nl']
-		else:
-			funcwordpos = re.compile('<dummy>')
-			stopwords = set()
+		stopwords = STOPWORDS.get(self.lang, set())
+		funcwordpos = re.compile(FUNCWORDPOS.get(self.lang, '<dummy>'))
 		return Counter('S_' + '_'.join(ngram)
 				for tree, sent in zip(self.trees, self.sents)
 					for ngram in ngrams(
@@ -408,7 +473,7 @@ class Text(object):
 		corpus = _fragments.getctrees(
 				zip(self.trees, self.origsents), vocab=vocab)['trees1']
 		results = _fragments.exactcountsslice(
-				tsgfragments, corpus, bitsets, indices=0,
+				bitsets, tsgfragments, corpus, indices=0,
 				maxnodes=tsgfragments.maxnodes)
 		return {'F_%s' % a: c for a, c in zip(fragmentkeys, results)}
 
@@ -434,8 +499,8 @@ def getfeatures(
 		# simple features:
 		counts['punct'][filename] = text.punctfrequencies()
 		counts['pos'][filename] = text.postags()
-		counts['read'][filename] = text.readabilityscores(lang)
-		counts['basic'][filename] = text.basicfeatures(freqlist, lang)
+		counts['read'][filename] = text.readabilityscores()
+		counts['basic'][filename] = text.basicfeatures(freqlist)
 		# high-dimensional features:
 		counts['const'][filename] = text.syntacticcategories()
 		counts['unigrams'][filename] = text.wordngrams(1)
@@ -445,7 +510,7 @@ def getfeatures(
 		counts['char3grams'][filename] = text.characterngrams(3)
 		counts['char4grams'][filename] = text.characterngrams(4)
 		counts['bigrams'][filename] = text.wordngrams(2)
-		counts['stylebigrams'][filename] = text.stylengrams(2, lang)
+		counts['stylebigrams'][filename] = text.stylengrams(2)
 		if tsgfragments is not None:
 			counts['tsgfrags'][filename] = text.externalfragments(
 					tsgfragments, fragmentkeys, bitsets, vocab)
@@ -468,15 +533,17 @@ def getfeatures(
 	# put other feature types in separate csv files:
 	for featclass in counts:
 		if featclass not in closedclass:
-			with gzip.open('features/%s.csv.gz' % featclass, 'wt') as out:
-				prune(pandas.DataFrame(
-					counts[featclass], dtype=np.int32).T
-					).T.to_csv(out, encoding='utf8')
+			# with gzip.open('features/%s.csv.gz' % featclass, 'wt') as out:
+			# 	prune(pandas.DataFrame(
+			# 		counts[featclass], dtype=np.int32).T
+			# 		).T.to_csv(out, encoding='utf8')
+			filename = 'features/%s.csv.gz' % featclass
+			pruneandwrite(counts[featclass], filename)
 	return result.T
 
 
 def fragmentcv(path, target, start=None, end=None, disc=False, numproc=16,
-		nonzerocountthreshold=0.5, minfreqthreshold=None,
+		discrete=False, nonzerocountthreshold=0.5, minfreqthreshold=None,
 		relevancythreshold=0.05, redundancythreshold=0.5):
 	"""Collect fragment comparisons between folds of the corpus.
 
@@ -510,7 +577,7 @@ def fragmentcv(path, target, start=None, end=None, disc=False, numproc=16,
 	countfragments(filenames, corpus, start, end)
 
 	# 3. filter fragments and store list for each subset of training folds
-	filterfragments(target, filenames, corpus, start, end,
+	filterfragments(target, filenames, corpus, start, end, discrete,
 			nonzerocountthreshold, minfreqthreshold, relevancythreshold,
 			redundancythreshold)
 
@@ -587,7 +654,7 @@ def getcommonfragments(args):
 	return (file1, file2), frags
 
 
-def filterfragments(target, filenames, corpus, start, end,
+def filterfragments(target, filenames, corpus, start, end, discrete,
 		nonzerocountthreshold, minfreqthreshold, relevancythreshold,
 		redundancythreshold):
 	"""2. filter fragments and store list."""
@@ -626,12 +693,13 @@ def filterfragments(target, filenames, corpus, start, end,
 				foldfrags,
 				features,
 				target.loc[filesnotinfold].target,
+				discrete,
 				relevancythreshold, redundancythreshold)
 		del features
 		print()
 
 
-def selectfragments(fold, columns, features, target,
+def selectfragments(fold, columns, features, target, discrete=False,
 		relevancythreshold=0.05, redundancythreshold=0.5):
 	"""Rank features using relevancy measure and greedily select non-redundant
 	features.
@@ -648,7 +716,6 @@ def selectfragments(fold, columns, features, target,
 	Ranks features using an univariate linear regression or chi2 test to each
 	feature wrt. the target value; filters redundant fragments by comparing
 	their correlation (continuous) or symmetric uncertainty (discrete)."""
-	discrete = isdiscrete(target)
 	if discrete:
 		# NB: feature values must be non-negative
 		# scores, pvalues = feature_selection.chi2(features, target)
@@ -675,7 +742,7 @@ def selectfragments(fold, columns, features, target,
 	with open('features/rankedfragfold%s.txt' % fold, 'w') as out:
 		out.writelines('%s\t%s=%g\n' % (
 				columns[n],
-				'chi2' if discrete else 'r',
+				'F' if discrete else 'r',
 				scores[n] if discrete
 				else np.corrcoef(target, features[:, n])[0, 1])
 				for n in candidates.nonzero()[0])
@@ -694,9 +761,8 @@ def selectfragments(fold, columns, features, target,
 		candidates[n] = False
 		result.append(n)
 		print('rank: %d, idx: %s, candidates: %s, '
-				'%s-score: %s, p-value: %s, fragment:\n%s' % (
+				'F: %s, p-value: %s, fragment:\n%s' % (
 				i, n, len(candidates.nonzero()[0]),
-				'chi2' if discrete else 'F',
 				scores[n], pvalues[n],  # features[:, n].corr(target),
 				columns[n]), file=sys.stderr)
 		x = 0
@@ -736,6 +802,19 @@ def prune(df):
 	# replace missing data with zero counts
 	df.fillna(0, inplace=True)
 	return df
+
+
+def pruneandwrite(x, filename):
+	"""Remove useless features (columns) from dataframe."""
+	df = pandas.DataFrame(x, dtype=np.int32).T
+	# drop features that occur in only one text:
+	df = df.loc[:, (df > 0).sum(axis=0) > 1]
+	# drop features that do not occur more than once in any text
+	df = df.loc[:, df.max(axis=0) > 1]
+	# replace missing data with zero counts
+	df.fillna(0, inplace=True)
+	with gzip.open(filename, 'wt') as out:
+		df.T.to_csv(out, encoding='utf8')
 
 
 def addparents(tree):
@@ -854,11 +933,6 @@ def detokenize(sent):
 	return ''.join(result).strip()
 
 
-def isdiscrete(vec):
-	"""Heuristically test if vector is discrete or continuous."""
-	return len(vec.unique()) < 0.25 * len(vec)
-
-
 def symmetricuncertainty(vec1, vec2, epsilon=0.01):
 	"""Compute symmetric uncertainty between two discrete vectors.
 
@@ -889,12 +963,11 @@ def sparse_corrcoef(A):
 
 def readexternalfragments(filename, disc=False):
 	"""Read a set of predefined tree fragments.	"""
-	items, fragmentkeys, vocab = [], [], Vocabulary()
-	for a, b, _ in treebank.incrementaltreereader(io.open(filename)):
-		fragmentkeys.append(a)
+	items, vocab = [], Vocabulary()
+	for a, b, _ in treebank.incrementaltreereader(openread(filename)):
 		items.append((binarize(handledisc(a), dot=True), b))
 	tsgfragments = _fragments.getctrees(items, vocab=vocab)['trees1']
-	_fragmentkeys, bitsets = _fragments.completebitsets(
+	fragmentkeys, bitsets = _fragments.completebitsets(
 			tsgfragments, vocab, tsgfragments.maxnodes, disc=disc)
 	return dict(tsgfragments=tsgfragments, fragmentkeys=fragmentkeys,
 			bitsets=bitsets, vocab=vocab)
@@ -939,126 +1012,145 @@ def load_sparse_mat(filename):
 	return data, rows, columns
 
 
-class OrderedLabelKFold(cross_validation._BaseKFold):
-	"""K-fold iterator variant with non-overlapping labels.
-
-	The same label will not appear in two different folds (the number of
-	distinct labels has to be at least equal to the number of folds).
+class OrderedGroupKFold:
+	"""K-fold iterator that deterministically assigns items to folds, while
+	ensuring that each given label appears only in a single fold.
 
 	Each k-th label ends up in the k-th fold, where k is the index of where the
-	label is first encountered in ``labels``.
+	label is first encountered in ``labels``. The number of distinct labels has
+	to be at least equal to the number of folds.
 
-	This code is based on LabelKFold from scikit-learn.
+	This code is based on GroupKFold from scikit-learn; it can be seen as a
+	combination of StratifiedKFold and GroupKFold.
 
 	Parameters
 	----------
-	labels : array-like with shape (n_samples, )
-		Contains a label for each sample.
+	groups : array-like with shape (n_samples, )
+		Contains a group for each sample.
 		The folds are built so that the same label does not appear in two
 		different folds.
 
-	n_folds : int, default=3
+	n_splits : int, default=3
 		Number of folds. Must be at least 2.
-
-	shuffle : boolean, optional
-		Whether to shuffle the data before splitting into batches.
-
-	random_state : None, int or RandomState
-		When shuffle=True, pseudo-random number generator state used for
-		shuffling. If None, use default numpy RNG for shuffling.
 
 	Examples
 	--------
 	>>> X = np.array([[1, 2], [3, 4], [5, 6], [7, 8]])
 	>>> y = np.array([1, 2, 3, 4])
-	>>> labels = np.array([0, 0, 2, 2])
-	>>> label_kfold = OrderedLabelKFold(labels, n_folds=2)
-	>>> len(label_kfold)
+	>>> groups = np.array([0, 0, 2, 2])
+	>>> group_kfold = OrderedGroupKFold(n_splits=2)
+	>>> group_kfold.get_n_splits()
 	2
-	>>> print(label_kfold)
-	OrderedLabelKFold(n_labels=4, n_folds=2)
-	>>> for train_index, test_index in label_kfold:
+	>>> print(group_kfold)
+	OrderedGroupKFold(n_splits=2)
+	>>> for train_index, test_index in group_kfold.split(X, y, groups):
 	...     print("TRAIN:", train_index, "TEST:", test_index)
 	...     X_train, X_test = X[train_index], X[test_index]
 	...     y_train, y_test = y[train_index], y[test_index]
 	...     print(X_train, X_test, y_train, y_test)
 	...
-	TRAIN: [0 1] TEST: [2 3]
-	[[1 2]
-	 [3 4]] [[5 6]
-	 [7 8]] [1 2] [3 4]
 	TRAIN: [2 3] TEST: [0 1]
 	[[5 6]
 	 [7 8]] [[1 2]
 	 [3 4]] [3 4] [1 2]
-
-	See also
-	--------
-	LeaveOneLabelOut for splitting the data according to explicit,
-	domain-specific stratification of the dataset.
+	TRAIN: [0 1] TEST: [2 3]
+	[[1 2]
+	 [3 4]] [[5 6]
+	 [7 8]] [1 2] [3 4]
 	"""
-	def __init__(self, labels, n_folds=3, shuffle=False, random_state=None):
-		super(OrderedLabelKFold, self).__init__(len(labels), n_folds,
-				shuffle, random_state)
+	def __init__(self, n_splits=3):
+		self.n_splits = n_splits
 
-		unique_labels, unique_indices, unique_inverse = np.unique(
-				labels, return_index=True, return_inverse=True)
-		n_labels = len(unique_labels)
+	def _iter_test_indices(self, X, y, groups):
+		if groups is None:
+			raise ValueError("The 'groups' parameter should not be None.")
 
-		if n_folds > n_labels:
-			raise ValueError(
-					("Cannot have number of folds n_folds={0} greater"
-					" than the number of labels: {1}.").format(
-					n_folds, n_labels))
+		unique_groups, unique_indices, unique_inverse = np.unique(
+				groups, return_index=True, return_inverse=True)
+		n_groups = len(unique_groups)
 
-		# indices of labels in order of first occurrence
+		if self.n_splits > n_groups:
+			raise ValueError("Cannot have number of splits n_splits=%d greater"
+					" than the number of groups: %d."
+					% (self.n_splits, n_groups))
+
+		# indices of groups in order of first occurrence
 		ranking = np.argsort(unique_indices)
-
-		if shuffle:
-			# When shuffle=True, label names are randomized to obtain random
-			# fold assigments.
-			rng = check_random_state(self.random_state)
-			rng.shuffle(ranking)
 
 		# Weight labels by their number of occurences
 		n_samples_per_label = np.bincount(unique_inverse)
 
 		# Total weight of each fold
-		n_samples_per_fold = np.zeros(n_folds, dtype=np.intp)
+		n_samples_per_fold = np.zeros(self.n_splits, dtype=np.intp)
 
 		# Mapping from label index to fold index
-		label_to_fold = np.zeros(n_labels, dtype=np.intp)
+		group_to_fold = np.zeros(n_groups, dtype=np.intp)
 
-		for n in range(n_labels):
+		for n in range(n_groups):
 			# Assign this label to the fold that currently has the least
 			# number of samples
 			fold = np.argmin(n_samples_per_fold)
 			n_samples_per_fold[fold] += n_samples_per_label[ranking[n]]
-			label_to_fold[ranking[n]] = fold
+			group_to_fold[ranking[n]] = fold
 
-		self.idxs = label_to_fold[unique_inverse]
-
-	def _iter_test_indices(self):
-		for f in range(self.n_folds):
+		self.idxs = group_to_fold[unique_inverse]
+		for f in range(self.n_splits):
 			yield (self.idxs == f).nonzero()[0]
 
-	def __repr__(self):
-		return '{0}.{1}(n_labels={2}, n_folds={3})'.format(
-			self.__class__.__module__,
-			self.__class__.__name__,
-			self.n,
-			self.n_folds,
-		)
+	def _iter_test_masks(self, X=None, y=None, groups=None):
+		"""Generates boolean masks corresponding to test sets.
+		By default, delegates to _iter_test_indices(X, y, groups)
+		"""
+		n_samples = X.shape[0] if hasattr(X, 'shape') else len(X)
+		for test_index in self._iter_test_indices(X, y, groups):
+			test_mask = np.zeros(n_samples, dtype=bool)
+			test_mask[test_index] = True
+			yield test_mask
 
-	def __len__(self):
-		return self.n_folds
+	def __repr__(self):
+		return '%s(n_splits=%d)' % (self.__class__.__name__, self.n_splits)
+
+	def get_n_splits(self, X=None, y=None, groups=None):
+		"""Returns the number of splitting iterations in the cross-validator"""
+		return self.n_splits
+
+	def split(self, X, y=None, groups=None):
+		"""Generate indices to split data into training and test set.
+		Parameters
+		----------
+		X : array-like of shape (n_samples, n_features)
+			Training data, where n_samples is the number of samples
+			and n_features is the number of features.
+		y : array-like of shape (n_samples,), default=None
+			The target variable for supervised learning problems.
+		groups : array-like of shape (n_samples,), default=None
+			Group labels for the samples used while splitting the dataset into
+			train/test set.
+		Yields
+		------
+		train : ndarray
+			The training set indices for that split.
+		test : ndarray
+			The testing set indices for that split.
+		"""
+		n_samples = X.shape[0] if hasattr(X, 'shape') else len(X)
+		if self.n_splits > n_samples:
+			raise ValueError("Cannot have number of splits n_splits=%d greater"
+					" than the number of samples: n_samples=%d."
+					% (self.n_splits, n_samples))
+
+		indices = np.arange(n_samples)
+		for test_index in self._iter_test_masks(X, y, groups):
+			train_index = indices[np.logical_not(test_index)]
+			test_index = indices[test_index]
+			yield train_index, test_index
 
 
 def main():
 	"""Extract features from a corpus."""
 	options = ('lang=', 'slice=', 'extfrags=', 'freqlist=', 'numproc=',
 			'folds=', 'nonzerocount=', 'minfreq=', 'relevancy=', 'redundancy=',
-			'disc', 'nofragments')
+			'disc', 'nofragments', 'discrete')
 	try:
 		opts, args = gnu_getopt(sys.argv[1:], '', options)
 		datasetdir, targetcolumn = args
@@ -1072,15 +1164,25 @@ def main():
 	# Sort by target variable to get stratified folds.
 	metadata = pandas.read_csv('metadata.csv').sort_values(by=targetcolumn)
 	if 'fold' not in metadata.columns:
-		numfolds = 5
+		numfolds = int(opts.get('--folds', 5))
 
 		# Assign each book to a fold, but make sure that books by same author
 		# end up in same fold.
 		# NB: assumes labels are of the form `AuthorLastName_Title`!
 		authors = metadata.Label.str.split('_').str[0]
-		cv = OrderedLabelKFold(
-				authors, n_folds=numfolds, shuffle=False)  # , random_state=1)
-		metadata['fold'] = cv.idxs.astype(int) + 1  # start fold IDs at 1
+
+		# K-Fold stratified on target variable
+		if '--discrete' in opts:
+			cv = model_selection.StratifiedKFold(n_splits=numfolds)
+		else:
+			cv = OrderedGroupKFold(n_splits=numfolds)
+
+		idxs = np.zeros(len(metadata), dtype=int)
+		for n, (_, t) in enumerate(cv.split(
+				np.zeros(len(metadata)), metadata[targetcolumn], authors),
+				1):
+			idxs[t] = int(n)
+		metadata['fold'] = idxs
 
 	os.mkdir('features')
 	target = pandas.DataFrame(
@@ -1131,6 +1233,7 @@ def main():
 			filepattern, target, start, end,
 			disc='--disc' in opts,
 			numproc=int(opts.get('--numproc', 1)),
+			discrete='--discrete' in opts,
 			nonzerocountthreshold=nonzerocountthreshold,
 			minfreqthreshold=minfreqthreshold,
 			relevancythreshold=float(opts.get('--relevancy', 0.05)),

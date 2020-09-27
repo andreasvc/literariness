@@ -4,7 +4,7 @@ such as tree fragments and n-gram features.
 
 Usage:
 
-    python3 predict.py <dataset>
+    python3 predict.py [--discrete] <dataset>
 
 Where `<dataset>` is a directory containing feature counts and parameters.
 
@@ -29,30 +29,32 @@ Output
 Evaluation is printed to standard output.
 Prediction results for bigrams, character n-grams, and tree fragments are
 written to `pred.csv`.
+
+Options
+-------
+--discrete          target is a classification task (default: regression)
 """
-import warnings
-warnings.simplefilter("ignore", UserWarning)
-warnings.simplefilter("ignore", DeprecationWarning)
 import os
 import sys
 import glob
 import pandas
-from sklearn import feature_extraction, preprocessing, metrics, pipeline, \
-		svm, linear_model
-from sklearn.externals import joblib
-from features import load_sparse_mat, isdiscrete
+import joblib
+from sklearn import (feature_extraction, preprocessing, metrics, pipeline,
+		svm, linear_model)
+from features import load_sparse_mat
 
-norm = 'l2'
+NORM = 'l2'
 USE_IDF = False
 SMOOTH_IDF = False
 SUBLINEAR_TF = False
+
 
 def evalreport(y_true, y_pred, target):
 	"""Given two Series objects aligned with 'target', compute metrics for each
 	fold and report mean/stderr."""
 	result = pandas.DataFrame(index=['mean', 'std err'])
 	ids = [target[target.fold == n].index for n in target.fold.unique()]
-	if isdiscrete(target.target):
+	if DISCRETE:
 		acc = pandas.Series([metrics.accuracy_score(y_true[a], y_pred[a])
 			for a in ids])
 		result['Accuracy'] = 100 * pandas.Series([
@@ -77,7 +79,7 @@ def evalreport(y_true, y_pred, target):
 
 def evalreport1(y_true, y_pred):
 	"""Simpler version to be used on one fold at a time."""
-	if isdiscrete(y_true):
+	if DISCRETE:
 		return pandas.Series(
 				data=[100 * metrics.accuracy_score(y_true, y_pred)],
 				index=['Accuracy'])
@@ -106,11 +108,6 @@ def inducedfeatures():
 	result['fold'] = target.fold
 	result['target'] = target.target
 
-	discrete = isdiscrete(target.target)
-	le = preprocessing.LabelEncoder()
-	if discrete:
-		le.fit(target.target)
-
 	# n-gram features
 	for featclass in glob.glob('features/*.csv.gz'):
 		if featclass == 'features/simple.csv.gz':
@@ -128,30 +125,26 @@ def inducedfeatures():
 		print(data.shape, features.shape)
 		model = pipeline.Pipeline([
 				('tfidf', feature_extraction.text.TfidfTransformer(
-					norm='l2', use_idf=USE_IDF, smooth_idf=SMOOTH_IDF,
+					norm=NORM, use_idf=USE_IDF, smooth_idf=SMOOTH_IDF,
 					sublinear_tf=SUBLINEAR_TF)),
 				('svm', svm.LinearSVC(C=C, random_state=1)
-					if discrete else
+					if DISCRETE else
 					svm.LinearSVR(C=C, epsilon=epsilon,
 						loss='epsilon_insensitive', random_state=1))])
 		X = features.values
-		y_pred = pandas.Series(index=target.index)
+		y_pred = pandas.Series(index=target.index, dtype='object')
 		y_true = target.target
 		for n in sorted(target.fold.unique()):
 			infold = target.fold == n
 			outsidefold = target.fold != n
-			X_train = X[outsidefold.nonzero()[0], :]
-			X_test = X[infold.nonzero()[0], :]
+			X_train = X[outsidefold.to_numpy().nonzero()[0], :]
+			X_test = X[infold.to_numpy().nonzero()[0], :]
 			y_train = target[outsidefold].target
-			if discrete:
-				y_train = le.transform(y_train)
 			model.fit(X_train, y_train)
 			if n == 1:
 				joblib.dump((features.columns, model),
 						featclass.split('.')[0] + '.pkl')
 			foldpred = model.predict(X_test)
-			if discrete:
-				foldpred = le.inverse_transform(foldpred)
 			y_pred[infold] = foldpred
 		basename = os.path.basename(featclass).replace('.csv.gz', '')
 		result[basename] = pandas.Series(y_pred, index=target.index)
@@ -169,13 +162,13 @@ def inducedfeatures():
 					{line[:line.index('\t')] for line in
 						open('features/rankednonredundantfragfold%d.txt' % n)})
 				for n in target.fold.unique()}
-		y_pred = pandas.Series(index=target.index)
+		y_pred = pandas.Series(index=target.index, dtype='object')
 		y_true = target.target
 		scaler = feature_extraction.text.TfidfTransformer(
-				norm='l2', use_idf=USE_IDF, smooth_idf=SMOOTH_IDF,
+				norm=NORM, use_idf=USE_IDF, smooth_idf=SMOOTH_IDF,
 				sublinear_tf=SUBLINEAR_TF)
 		predmodel = (svm.LinearSVC(C=C, random_state=1)
-				if discrete else
+				if DISCRETE else
 				svm.LinearSVR(C=C, epsilon=epsilon,
 					loss='epsilon_insensitive', random_state=1))
 		model = pipeline.Pipeline([('scaler', scaler), ('svm', predmodel)])
@@ -184,30 +177,33 @@ def inducedfeatures():
 			outsidefold = target.fold != n
 			fragoutsidefold = selections[n]
 			X = fragcounts[:, fragoutsidefold]
-			X_train = X[outsidefold.nonzero()[0], :]
-			X_test = X[infold.nonzero()[0], :]
+			X_train = X[outsidefold.to_numpy().nonzero()[0], :]
+			X_test = X[infold.to_numpy().nonzero()[0], :]
 			print(n, X_train.shape, X_test.shape)
 			y_train = target[outsidefold].target
-			if discrete:
-				y_train = le.transform(y_train)
 			model.fit(X_train, y_train)
 			if n == 1:
 				joblib.dump(model, 'fragments.pkl')
 			foldpred = model.predict(X_test)
-			if discrete:
-				foldpred = le.inverse_transform(foldpred)
 			y_pred[infold] = foldpred
 		result['fragments'] = y_pred
 		print(evalreport(y_true, y_pred, target).round(decimals=3))
 
 	# scores per fold
-	print('\n', pandas.DataFrame({x: [evalreport1(
+	scoresperfold = pandas.DataFrame({x: [evalreport1(
 			result.loc[result.fold == n, 'target'],
 			result.loc[result.fold == n, x])[
-				'Accuracy' if discrete else '$R^2$']
+				'Accuracy' if DISCRETE else '$R^2$']
 			for n in sorted(result.fold.unique())]
 			for x in result.columns if x not in ('fold', 'target')},
-			index=sorted(result.fold.unique())).round(decimals=3).T, '\n')
+			index=sorted(result.fold.unique())).T
+	mean = scoresperfold.mean(axis=1)
+	std = scoresperfold.std(axis=1)
+	scoresperfold['mean'] = mean
+	scoresperfold['std'] = std
+	print()
+	print(scoresperfold.round(decimals=3))
+	print()
 	result.to_csv('pred.csv')
 
 
@@ -241,13 +237,9 @@ def ensemble():
 		base = pandas.DataFrame(index=selected)
 	data = pandas.concat([metadata, simple, cliches, topics,
 			base[base.columns.difference(metadata.columns)]],
-			axis=1).loc[selected]
+			axis=1, sort=True).loc[selected]
 	target = pandas.read_csv('features/target.csv', index_col=0)
 	target = target.loc[selected]
-	discrete = isdiscrete(target.target)
-	le = preprocessing.LabelEncoder()
-	if discrete:
-		le.fit(target.target)
 	with open('selectedfeatures.txt', 'r') as inp:
 		feats = eval(inp.read())
 	y = target.target
@@ -255,28 +247,29 @@ def ensemble():
 	# dict vectorizer is used to transform categorical variables
 	# into indicator variables
 	dv = feature_extraction.DictVectorizer(sparse=False, sort=False)
-	if discrete:
-		scaler = feature_extraction.text.TfidfTransformer(
-				norm='l2', use_idf=USE_IDF, smooth_idf=SMOOTH_IDF,
-				sublinear_tf=SUBLINEAR_TF)
-		predmodel = linear_model.LogisticRegressionCV(random_state=1)
+	if DISCRETE:
+		normalizer = preprocessing.Normalizer()
+		predmodel = linear_model.LogisticRegressionCV(
+				random_state=1, multi_class='auto')
 		model = pipeline.Pipeline([
-				('dv', dv), ('scaler', scaler), ('predmodel', predmodel)])
+				('dv', dv), ('normalizer', normalizer),
+				('predmodel', predmodel)])
 	else:
-		# NB: don't apply scaler because RidgeCV has normalize=True
+		# NB: don't apply normalizer because RidgeCV has normalize=True
 		predmodel = linear_model.RidgeCV(normalize=True)
 		model = pipeline.Pipeline([('dv', dv), ('predmodel', predmodel)])
+
 	def runseq(seq):
 		"""Train a model on the features in `seq` and return vector with
 		predictions."""
-		y_pred = pandas.Series(index=target.index)
+		y_pred = pandas.Series(index=target.index, dtype='object')
 		for fold in sorted(target.fold.unique()):
 			selected = pandas.DataFrame()
 			for a in seq:
 				x = feats[a]
 				if x == 'topics':  # add columns for all topics
-					tmp = data[data.columns[data.columns.str.match(
-							r't[0-9]{1,2}', as_indexer=True)]]
+					tmp = data[data.columns[data.columns.str.fullmatch(
+							r't[0-9]{1,2}')]]
 					assert tmp.shape[1] > 0
 					selected[tmp.columns] = tmp
 				elif x in simpleorig.columns.levels[0]:  # add feature class
@@ -294,18 +287,14 @@ def ensemble():
 			X_train = [row for _, row in selected.loc[outsidefold].iterrows()]
 			X_test = [row for _, row in selected.loc[infold].iterrows()]
 			y_train = target[outsidefold].target
-			if discrete:
-				y_train = le.transform(y_train)
 			model.fit(X_train, y_train)
 			if fold == 1 and len(seq) == len(feats):
 				joblib.dump(model, 'ensemble.pkl')
 			foldpred = model.predict(X_test)
-			if discrete:
-				foldpred = le.inverse_transform(foldpred)
 			y_pred[infold] = foldpred
 		return y_pred
 
-	res = pandas.DataFrame(index=['Accuracy'] if discrete
+	res = pandas.DataFrame(index=['Accuracy'] if DISCRETE
 			else ['$R^2$', r'Kendall $\tau$', 'RMS error'])
 	result = pandas.DataFrame(index=target.index)
 	result['fold'] = target.fold
@@ -316,11 +305,15 @@ def ensemble():
 		res[('+ ' if n else '') + feats[n]] = df['mean']
 		result[('+ ' if n else '') + feats[n]] = y_pred
 
-	print(res.T.round(decimals=3))  # .to_latex())
+	rounding = {'$R^2$': 1, r'Kendall $\tau$': 3, 'RMS error': 3}
+	print(res.T.round(decimals=rounding))  # .to_latex())
 	result.to_csv('ensemble.csv')
 
 
-if  __name__ == '__main__':
+if __name__ == '__main__':
+	DISCRETE = '--discrete' in sys.argv
+	if '--discrete' in sys.argv:
+		sys.argv.remove('--discrete')
 	try:
 		_, datasetdir = sys.argv
 		os.chdir(datasetdir)

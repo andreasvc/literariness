@@ -1,0 +1,10 @@
+nltk
+numpy
+scipy
+pandas
+joblib
+scikit-learn
+Flask
+Cython
+readability
+git+git://github.com/andreasvc/disco-dop#egg=disco-dop
