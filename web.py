@@ -16,7 +16,7 @@ import re2  # https://www.github.com/andreasvc/pyre2
 # Flask & co
 from flask import Flask, Response
 from flask import request, render_template
-from sklearn.externals import joblib
+import joblib
 # local imports
 from features import Text
 
@@ -83,7 +83,7 @@ def getpredictions(feat):
 	for featclass in ('bigrams', 'char4grams'):
 		vec = pandas.Series(
 				feat[featclass], index=FEATURENAMES[featclass]).fillna(0)
-		result[featclass] = MODELS[featclass].predict(vec.values)[0]
+		result[featclass] = MODELS[featclass].predict([vec.values])[0]
 	feat['bigrams'] = result['bigrams']
 	feat['char4grams'] = result['char4grams']
 	result['ensemble'] = MODELS['ensemble'].predict(feat)[0]
@@ -125,7 +125,7 @@ FREQLIST = pandas.read_table('sonar-word.freqsort.lower.gz',
 		encoding='utf8', index_col=0, header=None, names=['word', 'count'],
 		nrows=20000)  # remove this to get accurate 'unknownvocab' results
 re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
-with open('../cliches/cliche_queries.txt', encoding='utf8') as inp:
+with open('cliche_queries.txt', encoding='utf8') as inp:
 	queries = inp.read().splitlines()
 # precompile into chunks of 500 cliche expressions
 CLICHES = [re2.compile(

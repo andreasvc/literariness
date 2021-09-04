@@ -3,8 +3,9 @@ numpy
 scipy
 pandas
 joblib
-scikit-learn
+scikit-learn==0.23.2
 Flask
 Cython
 readability
+pyre2
 git+git://github.com/andreasvc/disco-dop#egg=disco-dop
